@@ -176,10 +176,11 @@ int analyse_one_objfile(char *objfilename) {
 }
 
 int main(int argc, char *argv[]) {
-    for (int i = 1; i < argc; i++) {
-        printf("========== %s ==========\n", argv[i]);
-        analyse_one_objfile(argv[i]);
-    }
+    // for (int i = 1; i < argc; i++) {
+    //     printf("========== %s ==========\n", argv[i]);
+    //     analyse_one_objfile(argv[i]);
+    // }
+
     struct objfile *objfiles = malloc(sizeof(struct objfile) * (argc - 1));
     for (int i = 1; i < argc; i++) {
         objfiles[i - 1].filename = argv[i];
@@ -192,9 +193,9 @@ int main(int argc, char *argv[]) {
     }
 
     printf("========== search_symbol ==========\n");
-    char *filename;
-    char *address;
-    while (1) {
+    while (0) {
+        char *filename;
+        char *address;
         char buf[100];
         printf("the name of the symbol: ");
         fgets(buf, 100, stdin);
@@ -205,5 +206,55 @@ int main(int argc, char *argv[]) {
             return 0;
         search_symbol(argc - 1, objfiles, buf, &filename, &address);
     }
+
+    char *buffer;
+    buffer = malloc(sizeof(char) * 64 * 1024);
+    buffer =
+        (char *)(((uint64_t)buffer + ((1 << 12) - 1)) & (~((1 << 12) - 1)));
+    printf("buffer = %p\n", buffer);
+    char *p;
+    p = buffer;
+
+    Elf64_Ehdr *ehdr;
+    ehdr = (Elf64_Ehdr *)p;
+    ehdr->e_ident[EI_MAG0] = ELFMAG0;
+    ehdr->e_ident[EI_MAG0] = ELFMAG1;
+    ehdr->e_ident[EI_MAG0] = ELFMAG2;
+    ehdr->e_ident[EI_MAG0] = ELFMAG3;
+    ehdr->e_ident[EI_CLASS] = ELFCLASS64;
+    ehdr->e_ident[EI_DATA] = ELFDATA2LSB;
+    ehdr->e_ident[EI_VERSION] = EV_CURRENT;
+    ehdr->e_ident[EI_OSABI] = ELFOSABI_LINUX;
+    ehdr->e_ident[EI_ABIVERSION] = 0;
+    ehdr->e_ident[EI_PAD] = 0;
+
+    ehdr->e_type = ET_EXEC;
+    ehdr->e_machine = EM_X86_64;
+    ehdr->e_version = EV_CURRENT;
+
+    ehdr->e_entry = 0;
+    ehdr->e_phoff = sizeof(Elf64_Ehdr);
+    ehdr->e_shoff = 0;
+    ehdr->e_flags = 0;
+    ehdr->e_ehsize = sizeof(Elf64_Ehdr);
+    ehdr->e_phentsize = sizeof(Elf64_Phdr);
+    ehdr->e_phnum = 1;
+    ehdr->e_shentsize = 0;
+    ehdr->e_shnum = 0;
+    ehdr->e_shstrndx = 0;
+
+    Elf64_Phdr *phdr = (Elf64_Phdr *)ehdr + ehdr->e_phoff;
+    phdr->p_type = PT_LOAD;
+    phdr->p_offset = 0;
+    phdr->p_vaddr = (Elf64_Addr)p;
+    phdr->p_paddr = (Elf64_Addr)p;
+    phdr->p_filesz = 0;
+    phdr->p_memsz = 0;
+    phdr->p_flags = PF_R | PF_W | PF_X;
+    phdr->p_align = 0x1000;
+
+    p = (char *)p + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
+    p = (char *)(((uint64_t)buffer + ((1 << 12) - 1)) & (~((1 << 12) - 1)));
+
     return 0;
 }
