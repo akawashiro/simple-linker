@@ -10,7 +10,23 @@
 struct objfile {
     char *filename;
     char *address;
+    size_t size;
 };
+
+char *get_section_name(Elf64_Ehdr *ehdr, Elf64_Shdr *shdr){
+    Elf64_Shdr *sh = (Elf64_Shdr *)(ehdr + ehdr->e_shoff + ehdr->e_shentsize * ehdr->e_shstrndx);
+    return (char *)(ehdr + sh->sh_offset + shdr->sh_name);
+}
+
+Elf64_Shdr *get_section(Elf64_Ehdr *ehdr, char *name){
+    Elf64_Shdr *shdr = NULL;
+    for(int i=0;i<ehdr->e_shnum;i++){
+        Elf64_Shdr *s = (Elf64_Shdr *)(ehdr + ehdr->e_shoff + ehdr->e_shentsize * i);
+        if(strcmp(get_section_name(ehdr, s), name) == 0)
+            shdr = s;
+    }
+    return shdr;
+}
 
 void search_symbol(int n_objfiles, struct objfile objfiles[], char *symbol_name,
                    char **filename, char **address) {
@@ -182,6 +198,7 @@ int main(int argc, char *argv[]) {
     // }
 
     struct objfile *objfiles = malloc(sizeof(struct objfile) * (argc - 1));
+    int n_objfiles = argc-1;
     for (int i = 1; i < argc; i++) {
         objfiles[i - 1].filename = argv[i];
 
@@ -190,6 +207,7 @@ int main(int argc, char *argv[]) {
         fstat(fd, &sb);
         objfiles[i - 1].address =
             mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+        objfiles[i-1].size = sb.st_size;
     }
 
     printf("========== search_symbol ==========\n");
@@ -218,9 +236,9 @@ int main(int argc, char *argv[]) {
     Elf64_Ehdr *ehdr;
     ehdr = (Elf64_Ehdr *)p;
     ehdr->e_ident[EI_MAG0] = ELFMAG0;
-    ehdr->e_ident[EI_MAG0] = ELFMAG1;
-    ehdr->e_ident[EI_MAG0] = ELFMAG2;
-    ehdr->e_ident[EI_MAG0] = ELFMAG3;
+    ehdr->e_ident[EI_MAG1] = ELFMAG1;
+    ehdr->e_ident[EI_MAG2] = ELFMAG2;
+    ehdr->e_ident[EI_MAG3] = ELFMAG3;
     ehdr->e_ident[EI_CLASS] = ELFCLASS64;
     ehdr->e_ident[EI_DATA] = ELFDATA2LSB;
     ehdr->e_ident[EI_VERSION] = EV_CURRENT;
@@ -254,7 +272,35 @@ int main(int argc, char *argv[]) {
     phdr->p_align = 0x1000;
 
     p = (char *)p + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
-    p = (char *)(((uint64_t)buffer + ((1 << 12) - 1)) & (~((1 << 12) - 1)));
+    p = (char *)(((uint64_t)p + ((1 << 12) - 1)) & (~((1 << 12) - 1)));
+
+    printf("The base address of sections is %p\n", p);
+    for(int i=0;i < n_objfiles;i++){
+        printf("objfile[%d] (%s)\n", i, objfiles[i].filename);
+        memcpy(p, objfiles[i].address, objfiles[i].size);
+        printf("memcpy done.\n");
+        objfiles[i].address = p;
+        p += objfiles[i].size;
+        p = (char *)(((uint64_t) p + 15) & ~15);
+
+        Elf64_Shdr *bss = get_section((Elf64_Ehdr *)objfiles[i].address, ".bss");
+        if(bss){
+            bss->sh_offset = objfiles[i].size;
+            memset(p, 0, bss->sh_size);
+            p += bss->sh_size;
+        }
+        p = (char *)(((uint64_t) p + 15) & ~15);
+    }
+    char *start_filename;
+    char *start_address;
+    search_symbol(n_objfiles, objfiles, "_start", &start_filename, &start_address);
+    ehdr->e_entry = (Elf64_Addr)start_address;
+    phdr->p_filesz = (Elf64_Xword)(p - phdr->p_vaddr);
+    phdr->p_memsz= (Elf64_Xword)(p - phdr->p_vaddr);
+
+    FILE *fp = fopen("a.out", "wb");
+    fwrite((char *)phdr->p_vaddr, phdr->p_filesz, 1, fp);
+    fclose(fp);
 
     return 0;
 }
