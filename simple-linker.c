@@ -1,5 +1,6 @@
 #include <elf.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -261,44 +262,52 @@ int main(int argc, char *argv[]) {
     ehdr->e_shnum = 0;
     ehdr->e_shstrndx = 0;
 
-    Elf64_Phdr *phdr = (Elf64_Phdr *)ehdr + ehdr->e_phoff;
+    Elf64_Phdr *phdr = (Elf64_Phdr *)((char *)ehdr + ehdr->e_phoff);
     phdr->p_type = PT_LOAD;
     phdr->p_offset = 0;
     phdr->p_vaddr = (Elf64_Addr)p;
     phdr->p_paddr = (Elf64_Addr)p;
+    // phdr->p_vaddr = p;
+    // phdr->p_paddr = p;
+    printf("sizeof(char *) = %ld, sizeof(Elf64_Ehdr) = %ld, sizeof(Elf64_Phdr) = %ld\n", sizeof(char *), sizeof(Elf64_Ehdr), sizeof(Elf64_Phdr));
+    printf("p = %lx, (uint64_t)p =%lx\n", p, (uint64_t)p);
+    printf("p = %lx, phdr->p_vaddr =%lx\n", p, phdr->p_vaddr);
     phdr->p_filesz = 0;
     phdr->p_memsz = 0;
     phdr->p_flags = PF_R | PF_W | PF_X;
     phdr->p_align = 0x1000;
 
-    p = (char *)p + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
+    p += (sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr));
     p = (char *)(((uint64_t)p + ((1 << 12) - 1)) & (~((1 << 12) - 1)));
+    printf("p = %lx, &phdr->p_vaddr =%lx, phdr->p_vaddr =%lx\n", p,&phdr->p_vaddr, phdr->p_vaddr);
 
     printf("The base address of sections is %p\n", p);
     for(int i=0;i < n_objfiles;i++){
         printf("objfile[%d] (%s)\n", i, objfiles[i].filename);
+        printf("memcpy(%p, %p, %x)\n", p, objfiles[i].address, objfiles[i].size);
         memcpy(p, objfiles[i].address, objfiles[i].size);
+
         printf("memcpy done.\n");
         objfiles[i].address = p;
         p += objfiles[i].size;
-        p = (char *)(((uint64_t) p + 15) & ~15);
-
-        Elf64_Shdr *bss = get_section((Elf64_Ehdr *)objfiles[i].address, ".bss");
+        p = (char *)(((uint64_t) p + 15) & ~15); Elf64_Shdr *bss = get_section((Elf64_Ehdr *)objfiles[i].address, ".bss");
         if(bss){
             bss->sh_offset = objfiles[i].size;
             memset(p, 0, bss->sh_size);
             p += bss->sh_size;
         }
-        p = (char *)(((uint64_t) p + 15) & ~15);
-    }
-    char *start_filename;
-    char *start_address;
+            p = (char *)(((uint64_t) p + 15) & ~15);
+        }
+        char *start_filename;
+        char *start_address;
     search_symbol(n_objfiles, objfiles, "_start", &start_filename, &start_address);
     ehdr->e_entry = (Elf64_Addr)start_address;
+    printf("p = %p, phdr->p_vaddr =%p\n", p, phdr->p_vaddr);
     phdr->p_filesz = (Elf64_Xword)(p - phdr->p_vaddr);
     phdr->p_memsz= (Elf64_Xword)(p - phdr->p_vaddr);
 
     FILE *fp = fopen("a.out", "wb");
+    printf("phdr->p_filesz = %ld\n", phdr->p_filesz);
     fwrite((char *)phdr->p_vaddr, phdr->p_filesz, 1, fp);
     fclose(fp);
 
