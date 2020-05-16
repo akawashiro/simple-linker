@@ -269,7 +269,7 @@ int main(int argc, char *argv[]) {
 
     link_objfiles(n_objfiles, objfiles);
 
-    FILE *fp = fopen("a.out", "wb");
+    FILE *fp = fopen("main-simple-linker.out", "wb");
     printf("phdr->p_filesz = %ld\n", phdr->p_filesz);
     fwrite((char *)phdr->p_vaddr, phdr->p_filesz, 1, fp);
     fclose(fp);
